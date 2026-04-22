@@ -1,0 +1,11 @@
+node_modules
+app/node_modules
+app/dist
+server/node_modules
+server/package-lock.json
+server/package.json
+server/index.js
+snowflake.log
+*.md
+.git
+.gitignore
