@@ -37,12 +37,20 @@ Dockerfile    Multi-stage build for SPCS deployment
 
 ```bash
 cd app && npm install
+```
+
+For the Python backend, use a virtual environment to ensure you get a recent version of the Snowflake connector (3.x versions do not support `connection_name` with PAT authentication):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install flask snowflake-connector-python
 ```
 
 ### 2. Start the backend
 
 ```bash
+source .venv/bin/activate   # if not already active
 SNOWFLAKE_CONNECTION_NAME=<your-connection> python server/app.py
 ```
 
@@ -61,6 +69,20 @@ The Vite dev server starts on port 5173 and proxies `/api` requests to the Flask
 ### 4. Open the app
 
 Navigate to http://localhost:5173
+
+### 5. Tear down
+
+When finished, deactivate the virtual environment:
+
+```bash
+deactivate
+```
+
+This returns your shell to the system Python. The `.venv` directory remains on disk so you can reactivate it later without reinstalling packages. To remove it entirely:
+
+```bash
+rm -rf .venv
+```
 
 ---
 
