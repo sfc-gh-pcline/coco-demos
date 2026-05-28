@@ -20,7 +20,7 @@ server/       Python Flask API (dual-mode: local dev + SPCS)
 Dockerfile    Multi-stage build for SPCS deployment
 ```
 
-**Local development:** The Flask backend connects to Snowflake via the Python connector using a named connection from `~/.snowflake/connections.toml`.
+**Local deployment:** The Flask backend connects to Snowflake via the Python connector using a named connection from `~/.snowflake/connections.toml`.
 
 **SPCS deployment:** The same Flask backend detects the SPCS environment and switches to the SQL REST API with the auto-injected OAuth token at `/snowflake/session/token`.
 
@@ -29,9 +29,9 @@ Dockerfile    Multi-stage build for SPCS deployment
 - [Snowflake CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index) (`snow`) with a configured connection
 - Node.js 22+
 - Python 3.12+
-- Docker (for SPCS deployment)
+- Docker Desktop (for SPCS deployment)
 
-## Local Development
+## Local Deployment
 
 ### 1. Install dependencies
 
@@ -45,6 +45,8 @@ pip install flask snowflake-connector-python
 ```bash
 SNOWFLAKE_CONNECTION_NAME=<your-connection> python server/app.py
 ```
+
+`<your-connection>` is the name of a connection section in your `~/.snowflake/connections.toml` file. For example, if your file contains `[myaccount]`, use `myaccount`.
 
 The Flask server starts on port 3001.
 
@@ -60,22 +62,112 @@ The Vite dev server starts on port 5173 and proxies `/api` requests to the Flask
 
 Navigate to http://localhost:5173
 
+---
+
 ## Deploy to SPCS
 
-### 1. Build and push the Docker image
+Snowpark Container Services (SPCS) runs your Docker container inside Snowflake's managed infrastructure. The deployment process has four phases: creating the required Snowflake objects, building and pushing the Docker image, deploying the service, and granting access.
+
+Throughout this section, replace the following placeholders with your actual values:
+
+| Placeholder | Example | Description |
+|---|---|---|
+| `<connection>` | `myaccount` | Your Snowflake CLI connection name |
+| `<db>` | `MY_DB` | Database to deploy into |
+| `<schema>` | `APPS` | Schema to deploy into |
+| `<repo>` | `SV_IMAGE_REPO` | Name for the image repository |
+| `<pool>` | `SV_COMPUTE_POOL` | Name for the compute pool |
+| `<warehouse>` | `COMPUTE_WH` | Warehouse the service uses for queries |
+
+---
+
+### Step 1 — Create the database and schema
+
+Skip this step if you already have a database and schema to deploy into.
+
+```sql
+CREATE DATABASE IF NOT EXISTS <db>;
+CREATE SCHEMA IF NOT EXISTS <db>.<schema>;
+```
+
+---
+
+### Step 2 — Create an image repository
+
+An image repository is where Snowflake stores your Docker images. It is similar to a private Docker registry hosted inside Snowflake.
+
+```sql
+CREATE IMAGE REPOSITORY IF NOT EXISTS <db>.<schema>.<repo>;
+```
+
+Once created, retrieve the registry URL — you will need it to tag and push your image:
+
+```sql
+SHOW IMAGE REPOSITORIES IN SCHEMA <db>.<schema>;
+```
+
+Copy the value from the `repository_url` column. It looks like:
+
+```
+<org>-<account>.registry.snowflakecomputing.com/<db>/<schema>/<repo>
+```
+
+---
+
+### Step 3 — Create a compute pool
+
+A compute pool is a set of virtual machines that runs your containers. `CPU_X64_XS` is the smallest instance type and is sufficient for this application.
+
+```sql
+CREATE COMPUTE POOL IF NOT EXISTS <pool>
+  MIN_NODES = 1
+  MAX_NODES = 1
+  INSTANCE_FAMILY = CPU_X64_XS;
+```
+
+Wait for the pool to reach `ACTIVE` status before continuing. This typically takes 2–5 minutes the first time:
+
+```sql
+DESCRIBE COMPUTE POOL <pool>;
+```
+
+Look for `state = ACTIVE` in the output. Re-run the command until it appears.
+
+---
+
+### Step 4 — Authenticate Docker with the Snowflake registry
+
+Log Docker in to your Snowflake image registry using the Snowflake CLI:
+
+```bash
+snow spcs image-registry login --connection <connection>
+```
+
+---
+
+### Step 5 — Build and push the Docker image
+
+Build the image for the `linux/amd64` platform (required by SPCS regardless of your local machine architecture), tag it with the full registry URL, and push it:
 
 ```bash
 docker build --platform linux/amd64 -t sv-viewer:latest .
-docker tag sv-viewer:latest <registry-url>/<db>/<schema>/<repo>/sv-viewer:latest
-snow spcs image-registry login --connection <your-connection>
-docker push <registry-url>/<db>/<schema>/<repo>/sv-viewer:latest
+
+docker tag sv-viewer:latest <repository_url>/sv-viewer:latest
+
+docker push <repository_url>/sv-viewer:latest
 ```
 
-### 2. Create the service
+Replace `<repository_url>` with the value you copied in Step 2.
+
+---
+
+### Step 6 — Create the service
+
+The service spec tells SPCS how to run your container. Replace `<db>`, `<schema>`, `<repo>`, `<pool>`, and `<warehouse>` with your values.
 
 ```sql
 CREATE SERVICE <db>.<schema>.SV_VIEWER_SERVICE
-  IN COMPUTE POOL <pool_name>
+  IN COMPUTE POOL <pool>
   FROM SPECIFICATION $$
 spec:
   containers:
@@ -83,7 +175,7 @@ spec:
     image: /<db>/<schema>/<repo>/sv-viewer:latest
     env:
       PORT: "8080"
-      SNOWFLAKE_WAREHOUSE: "COMPUTE_WH"
+      SNOWFLAKE_WAREHOUSE: "<warehouse>"
     resources:
       requests:
         memory: 512Mi
@@ -103,20 +195,81 @@ $$
   MAX_INSTANCES = 1;
 ```
 
-### 3. Get the endpoint URL
+> **Note:** The image path in the spec starts with a `/` and uses the path portion of the registry URL (without the hostname).
+
+---
+
+### Step 7 — Wait for the service to start
+
+SPCS pulls the image and starts the container, which takes a few minutes. Monitor the service status:
+
+```sql
+SELECT SYSTEM$GET_SERVICE_STATUS('<db>.<schema>.SV_VIEWER_SERVICE');
+```
+
+Wait until the status shows `READY`. You can also view recent container logs to confirm the app started:
+
+```sql
+CALL SYSTEM$GET_SERVICE_LOGS('<db>.<schema>.SV_VIEWER_SERVICE', 0, 'sv-viewer', 100);
+```
+
+You should see a line like `Listening at: http://0.0.0.0:8080` in the output.
+
+---
+
+### Step 8 — Grant access
+
+By default, only the role that created the service can access it. Grant `USAGE` on the service to any role that should be able to reach the app:
+
+```sql
+GRANT USAGE ON SERVICE <db>.<schema>.SV_VIEWER_SERVICE TO ROLE <role>;
+```
+
+The app shows only the semantic views that the **service owner's role** has access to. If your semantic views live in other databases, grant the service owner's role the necessary `USAGE` and `SELECT` privileges on those databases, schemas, and semantic views.
+
+---
+
+### Step 9 — Get the URL and log in
+
+Retrieve the public endpoint URL:
 
 ```sql
 SHOW ENDPOINTS IN SERVICE <db>.<schema>.SV_VIEWER_SERVICE;
 ```
 
-### RBAC
+Copy the `ingress_url` value and open it in your browser. Snowflake will redirect you to authenticate with your Snowflake credentials. After logging in you will be taken directly to the app.
 
-The service only shows semantic views that the service owner role has privileges on. See [`requirements.md`](requirements.md) for detailed grant examples.
+---
 
 ## Updating the Service
 
-After code changes, rebuild and push the image, then:
+After making code changes, rebuild and push the image (Steps 4–5 above), then reload the service from the updated spec:
 
 ```sql
-ALTER SERVICE <db>.<schema>.SV_VIEWER_SERVICE FROM SPECIFICATION $$ ... $$;
+ALTER SERVICE <db>.<schema>.SV_VIEWER_SERVICE
+  FROM SPECIFICATION $$
+spec:
+  containers:
+  - name: sv-viewer
+    image: /<db>/<schema>/<repo>/sv-viewer:latest
+    env:
+      PORT: "8080"
+      SNOWFLAKE_WAREHOUSE: "<warehouse>"
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 500m
+      limits:
+        memory: 1Gi
+        cpu: 1000m
+    readinessProbe:
+      port: 8080
+      path: /
+  endpoints:
+  - name: app
+    port: 8080
+    public: true
+$$;
 ```
+
+SPCS will pull the new image and restart the container automatically.
