@@ -175,19 +175,36 @@ CREATE COMPUTE POOL IF NOT EXISTS <pool>
   INSTANCE_FAMILY = CPU_X64_XS;
 ```
 
-Wait for the pool to reach `ACTIVE` status before continuing. This typically takes 2–5 minutes the first time:
+Wait for the pool to finish provisioning before continuing. This typically takes 2–5 minutes the first time:
 
 ```sql
 DESCRIBE COMPUTE POOL <pool>;
 ```
 
-Look for `state = ACTIVE` in the output. Re-run the command until it appears.
+Look for `state = IDLE` in the output and re-run until it appears. `IDLE` means the pool is provisioned and ready — it transitions to `ACTIVE` once a service is running on it. If the state shows `STARTING`, the nodes are still being provisioned.
 
 ---
 
-### Step 4 — Authenticate Docker with the Snowflake registry
+### Step 4 — Create a warehouse
 
-Log Docker in to your Snowflake image registry using the Snowflake CLI:
+The service uses a warehouse to execute SQL queries against Snowflake. If you already have a warehouse you want to use, skip this step and use its name as `<warehouse>` throughout the rest of this guide.
+
+Otherwise, create one:
+
+```sql
+CREATE WAREHOUSE IF NOT EXISTS <warehouse>
+  WAREHOUSE_SIZE = XSMALL
+  AUTO_SUSPEND = 60
+  AUTO_RESUME = TRUE;
+```
+
+`XSMALL` with auto-suspend is sufficient for this application.
+
+---
+
+### Step 5 — Authenticate Docker with the Snowflake registry
+
+Log Docker in to your Snowflake image registry using the Snowflake CLI. Here `image-registry` is a literal subcommand — only `<connection>` is a placeholder:
 
 ```bash
 snow spcs image-registry login --connection <connection>
@@ -195,7 +212,7 @@ snow spcs image-registry login --connection <connection>
 
 ---
 
-### Step 5 — Build and push the Docker image
+### Step 6 — Build and push the Docker image
 
 Build the image for the `linux/amd64` platform (required by SPCS regardless of your local machine architecture), tag it with the full registry URL, and push it:
 
@@ -211,7 +228,7 @@ Replace `<repository_url>` with the value you copied in Step 2.
 
 ---
 
-### Step 6 — Create the service
+### Step 7 — Create the service
 
 The service spec tells SPCS how to run your container. Replace `<db>`, `<schema>`, `<repo>`, `<pool>`, and `<warehouse>` with your values.
 
@@ -249,7 +266,7 @@ $$
 
 ---
 
-### Step 7 — Wait for the service to start
+### Step 8 — Wait for the service to start
 
 SPCS pulls the image and starts the container, which takes a few minutes. Monitor the service status:
 
@@ -267,7 +284,7 @@ You should see a line like `Listening at: http://0.0.0.0:8080` in the output.
 
 ---
 
-### Step 8 — Grant access
+### Step 9 — Grant access
 
 By default, only the role that created the service can access it. Grant `USAGE` on the service to any role that should be able to reach the app:
 
@@ -279,7 +296,7 @@ The app shows only the semantic views that the **service owner's role** has acce
 
 ---
 
-### Step 9 — Get the URL and log in
+### Step 10 — Get the URL and log in
 
 Retrieve the public endpoint URL:
 
@@ -293,7 +310,7 @@ Copy the `ingress_url` value and open it in your browser. Snowflake will redirec
 
 ## Updating the Service
 
-After making code changes, rebuild and push the image (Steps 4–5 above), then reload the service from the updated spec:
+After making code changes, rebuild and push the image (Steps 5–6 above), then reload the service from the updated spec:
 
 ```sql
 ALTER SERVICE <db>.<schema>.SV_VIEWER_SERVICE
