@@ -1,0 +1,48 @@
+# ──────────────────────────────────────────────────────────
+# snowflake.yml.example — Snowflake App Runtime deployment config
+#
+# HOW TO USE:
+#   cp snowflake.yml.example snowflake.yml
+#
+# Then replace every <placeholder> with your own values.
+# snowflake.yml is git-ignored so your personal details stay local.
+# ──────────────────────────────────────────────────────────
+
+definition_version: "2"
+
+entities:
+  db_explorer:
+    type: snowflake-app
+    identifier:
+      name: DB_EXPLORER            # Snowflake object name for the app (UPPER_SNAKE_CASE)
+      database: <YOUR_DATABASE>    # Database where the app will be created
+      schema: <YOUR_SCHEMA>        # Schema where the app will be created (e.g. APPS or PUBLIC)
+    artifacts:
+      - src: app
+        dest: ./app
+      - src: components
+        dest: ./components
+      - src: lib
+        dest: ./lib
+      - src: public
+        dest: ./public
+      - src: app.yml
+        dest: ./app.yml
+      - src: package.json
+        dest: ./package.json
+      - src: package-lock.json
+        dest: ./package-lock.json
+      - src: next.config.mjs
+        dest: ./next.config.mjs
+      - src: tsconfig.json
+        dest: ./tsconfig.json
+      - src: next-env.d.ts
+        dest: ./next-env.d.ts
+    query_warehouse: <YOUR_WAREHOUSE>        # Warehouse for app queries (e.g. MY_WH)
+    build_compute_pool:
+      name: <YOUR_COMPUTE_POOL>    # Compute pool used to build the app (e.g. CPU_X64_XS)
+    service_compute_pool:
+      name: <YOUR_COMPUTE_POOL>    # Compute pool the app service runs on (can be the same)
+    build_eai:
+      name: <YOUR_BUILD_EAI>       # External access integration that allows egress to registry.npmjs.org
+
