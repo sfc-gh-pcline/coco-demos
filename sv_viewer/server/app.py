@@ -5,7 +5,7 @@ from flask import Flask, jsonify, send_from_directory
 
 app = Flask(__name__, static_folder=os.getenv('STATIC_DIR', None))
 
-CONNECTION_NAME = os.getenv('SNOWFLAKE_CONNECTION_NAME', 'demo-acct-west')
+CONNECTION_NAME = os.getenv('SNOWFLAKE_CONNECTION_NAME', 'default')
 SNOWFLAKE_HOST = os.getenv('SNOWFLAKE_HOST')
 SNOWFLAKE_WAREHOUSE = os.getenv('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH')
 TOKEN_PATH = '/snowflake/session/token'
