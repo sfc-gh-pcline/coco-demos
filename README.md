@@ -9,3 +9,4 @@ Each project includes a `requirements.md` that can be used as a prompt for Corte
 | Folder | Description |
 |--------|-------------|
 | [`sv_viewer`](sv_viewer/) | **Semantic View Explorer** — Browse, search, and inspect Snowflake Semantic View definitions. React + Flask with local dev and SPCS deployment support. |
+| [`db-explorer`](db-explorer/) | **Database Explorer** — Browse the databases, schemas, tables, and columns a user is permitted to see. Uses Caller's Rights so each person's view reflects their own role and grants. Next.js with no Python or Docker required. |

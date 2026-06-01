@@ -1,0 +1,11 @@
+install:
+  commands:
+    - ["npm", "ci", "--include=dev"]
+
+run:
+  command: ["node", ".next/standalone/server.js"]
+
+profile:
+  label: "Database Explorer"
+  description: "Browse the databases, schemas, tables, and columns you are permitted to see in Snowflake"
+  icon: public/icon.svg
