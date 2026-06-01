@@ -90,6 +90,24 @@ rm -rf .venv
 
 Snowpark Container Services (SPCS) runs your Docker container inside Snowflake's managed infrastructure. The deployment process has four phases: creating the required Snowflake objects, building and pushing the Docker image, deploying the service, and granting access.
 
+### Required permissions
+
+The role you use to run these steps needs the following privileges:
+
+| Privilege | Object | Required for |
+|---|---|---|
+| `CREATE DATABASE` | Account | Step 1 (if creating a new database) |
+| `CREATE SCHEMA` | Database | Step 1 (if creating a new schema) |
+| `CREATE IMAGE REPOSITORY` | Schema | Step 2 |
+| `CREATE COMPUTE POOL` | Account | Step 3 |
+| `BIND SERVICE ENDPOINT` | Account | Step 6 (required for `public: true` endpoints) |
+| `CREATE SERVICE` | Schema | Step 6 |
+| `USAGE` | Warehouse | Step 6 (warehouse used by the service) |
+
+The easiest path for a first deployment is to use the `SYSADMIN` or `ACCOUNTADMIN` role, which has all of these by default.
+
+---
+
 Throughout this section, replace the following placeholders with your actual values:
 
 | Placeholder | Example | Description |
@@ -116,23 +134,33 @@ CREATE SCHEMA IF NOT EXISTS <db>.<schema>;
 
 ### Step 2 — Create an image repository
 
-An image repository is where Snowflake stores your Docker images. It is similar to a private Docker registry hosted inside Snowflake.
+An image repository is a private Docker registry hosted inside Snowflake. It stores the container images that SPCS pulls when starting your service.
 
-```sql
-CREATE IMAGE REPOSITORY IF NOT EXISTS <db>.<schema>.<repo>;
-```
-
-Once created, retrieve the registry URL — you will need it to tag and push your image:
+First, check whether a repository already exists in the schema:
 
 ```sql
 SHOW IMAGE REPOSITORIES IN SCHEMA <db>.<schema>;
 ```
 
-Copy the value from the `repository_url` column. It looks like:
+If the output is empty, or if you want a dedicated repository for this app, create one:
+
+```sql
+CREATE IMAGE REPOSITORY IF NOT EXISTS <db>.<schema>.<repo>;
+```
+
+Then retrieve the registry URL from the `repository_url` column — you will need it to tag and push your image:
+
+```sql
+SHOW IMAGE REPOSITORIES IN SCHEMA <db>.<schema>;
+```
+
+The URL looks like:
 
 ```
 <org>-<account>.registry.snowflakecomputing.com/<db>/<schema>/<repo>
 ```
+
+Copy the full value for use in Step 5.
 
 ---
 
